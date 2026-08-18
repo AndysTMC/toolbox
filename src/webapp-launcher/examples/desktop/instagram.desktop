@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=1.0
+Name=Instagram
+Comment=Instagram Web App
+Exec=google-chrome --user-data-dir=/home/andys-tmc/.config/chrome-instagram --start-maximized --app=https://www.instagram.com/
+Icon=/home/andys-tmc/.local/share/icons/instagram.png
+Terminal=false
+Type=Application
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=chrome-www.instagram.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+
+[Desktop Action NewWindow]
+Name=Open Instagram
+Exec=google-chrome --user-data-dir=/home/andys-tmc/.config/chrome-instagram --start-maximized --app=https://www.instagram.com/

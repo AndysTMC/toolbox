@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Netflix
+Comment=Netflix Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-netflix" --start-maximized --app="https://www.netflix.com/"
+Icon=/home/andys-tmc/.local/share/icons/netflix.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;
+StartupWMClass=chrome-www.netflix.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=netflix
+
+[Desktop Action NewWindow]
+Name=Open Netflix
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-netflix" --start-maximized --app="https://www.netflix.com/"

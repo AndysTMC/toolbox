@@ -10,7 +10,7 @@ Your job is to help me install, verify, and use it safely. Follow these rules:
 
 ## Your Operating Rules
 
-1. **Do not invent StartupWMClass as if it were confirmed.** Chromium derives the --app window instance from the URL host (typically `<browser>-<host>__-Default`, e.g. `chrome-web.whatsapp.com__-Default`). The script writes that as a fallback so the app still launches, then overwrites it with the live window's WM_CLASS when detection works. If detection cannot run, walk me through GNOME Looking Glass (`Alt+F2` → `lg` → Windows tab) and put the exact `wmclass` value in the `.desktop` file (or rerun `fix-wmclass`).
+1. **Do not invent StartupWMClass as if it were confirmed.** Chromium derives the --app window instance from the URL **host and path** (typically `<browser>-<host>__-Default` for `/`, e.g. `chrome-web.whatsapp.com__-Default`; a path like `/finance/` becomes `chrome-www.google.com__finance_-Default`). The script writes that as a fallback so the app still launches, then overwrites it with the live window's WM_CLASS when detection works. If detection cannot run, walk me through GNOME Looking Glass (`Alt+F2` → `lg` → Windows tab) and put the exact `wmclass` value in the `.desktop` file (or rerun `fix-wmclass`).
 
 2. **How detection actually works** (do not search by window title, and do not use `--classname "^chrome-<host>"`):
    - `xdotool search --onlyvisible --class <browser-class>` (class token is `chrome`, `chromium`, `brave`, `vivaldi`, or `edge`)
@@ -28,6 +28,10 @@ Your job is to help me install, verify, and use it safely. Follow these rules:
 6. **Validate slugs** — must match `^[a-z0-9][a-z0-9-]*$`. Reject anything else.
 
 7. **Quote Exec arguments** — paths and URLs with reserved characters break `.desktop` files. Use the spec: wrap in `"`, escape `\`, `"`, `$`, and backticks.
+
+8. **Prepare raster icons without resizing.** GNOME stretches non-square PNGs. After `--icon` or a favicon fetch, when ImageMagick is installed: lossless-trim empty/transparent margins, then a square canvas with **5% padding on every side** (`max(w,h) × 1.10`). Crop and extent only — do not scale. PNG keeps alpha. To fix icons already installed: `./webapp-launcher square-icon SLUG` or `square-icon --all`.
+
+9. **Never accept Chrome’s first-run “set as default browser” (or similar) prompt.** Each launcher uses a fresh isolated profile, so Chrome asks this on first open. Tell me to dismiss it. Do not click Set as default / Yes.
 
 ## My Environment (fill in or ask)
 
@@ -70,7 +74,7 @@ chmod +x webapp-launcher
 ./webapp-launcher --help
 ```
 
-Confirm usage lists `create`, `list`, `remove`, and `fix-wmclass`.
+Confirm usage lists `create`, `list`, `remove`, `fix-wmclass`, and `square-icon`.
 
 ### 3. Create a Launcher
 
@@ -94,7 +98,9 @@ Expected flow:
 3. Script launches the app (or reuses an already-open `--app` window)
 4. Script finds a visible browser window whose WM_CLASS *instance* contains the site host
 5. Script writes that confirmed value to `StartupWMClass=`
-6. I log in, then right-click the dock icon → "Add to Favorites"
+6. If Chrome asks to set itself as the default browser, I dismiss it
+7. The window should open maximized (`--start-maximized` on Exec)
+8. I log in, then right-click the dock icon → "Add to Favorites"
 
 **B. Semi-automatic (pure-Wayland or xdotool unavailable):**
 
@@ -128,7 +134,7 @@ Generate the `.desktop` file content with:
 
 - Absolute paths (no `$HOME` — `.desktop` files do not expand it)
 - Quoted Exec arguments
-- Fallback `StartupWMClass=chrome-<host>__-Default` and a note to verify via Looking Glass
+- Fallback `StartupWMClass` from host+path (e.g. `chrome-www.google.com__finance_-Default`) and a note to verify via Looking Glass
 
 ### 4. Verify the Installation
 
@@ -183,8 +189,9 @@ gtk-launch <SITE_SLUG> 2>&1 || gio launch ~/.local/share/applications/<SITE_SLUG
 curl -fsSL "https://www.google.com/s2/favicons?sz=256&domain=<HOST>" \
   -o ~/.local/share/icons/<SLUG>.png
 
-# Or copy a custom image
+# Or copy a custom image, then square it so the dock does not stretch
 cp /path/to/icon.png ~/.local/share/icons/<SLUG>.png
+./webapp-launcher square-icon <SLUG>
 ```
 
 **Profile corrupted / want a fresh login:**

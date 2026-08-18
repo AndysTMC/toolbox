@@ -5,7 +5,8 @@
 # and StartupWMClass read off the real window instead of guessed.
 #
 # Detection: an --app window is a visible browser window whose WM_CLASS
-# instance contains the site's host (e.g. chrome-web.whatsapp.com__-Default).
+# instance contains the site's Chromium app id (host + sanitized path,
+# e.g. chrome-www.google.com__finance_-Default).
 # Matching on window title is wrong in both directions: sites that set
 # their own document.title fail the search, and a normal browser tab
 # whose title happens to contain the host can match instead — its
@@ -17,6 +18,11 @@
 # "<browser>-<host>__-Default" class, prints Looking Glass instructions,
 # and never pretends the value was confirmed.
 #
+# Icons: GNOME stretches non-square PNGs in the dock and app grid. After
+# copy or favicon fetch (ImageMagick present): lossless-trim empty
+# margins, then a square canvas with ICON_PAD_PERCENT transparent
+# padding on every side. No resampling — crop and extent only.
+#
 # Usage:
 #   webapp-launcher create [--name NAME] [--slug SLUG] [--url URL]
 #                          [--icon PATH] [--browser BIN]
@@ -24,6 +30,7 @@
 #   webapp-launcher list
 #   webapp-launcher remove SLUG
 #   webapp-launcher fix-wmclass SLUG
+#   webapp-launcher square-icon SLUG|--all
 #   webapp-launcher -h | --help
 #
 # Flags left out of create are prompted for — but only when stdin is a
@@ -36,6 +43,9 @@ APP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons"
 CONFIG_ROOT="$HOME/.config"
 DETECT_TIMEOUT=30
+# Breathing room around trimmed icon content, each side, as a percent of
+# max(width, height). 5 → canvas is 110% of the longer side.
+ICON_PAD_PERCENT=5
 
 # ---------- output ----------
 
@@ -70,6 +80,7 @@ Usage:
   webapp-launcher list
   webapp-launcher remove SLUG
   webapp-launcher fix-wmclass SLUG
+  webapp-launcher square-icon SLUG|--all
   webapp-launcher -h | --help
 
 Flags left out of create are prompted for (interactive runs only).
@@ -79,6 +90,7 @@ Examples:
     --url https://web.whatsapp.com/
   webapp-launcher create                  # fully interactive
   webapp-launcher fix-wmclass whatsapp    # after a browser update
+  webapp-launcher square-icon --all       # pad existing icons to 1:1
   webapp-launcher remove whatsapp
 EOF
 }
@@ -202,16 +214,28 @@ browser_instance_prefix() {
   esac
 }
 
+# App identifier of a URL used by Chromium: host_path (with invalid path chars replaced by _)
+app_name_of_url() {
+  local url="$1" host path without_scheme path_sanitized
+  without_scheme=$(printf '%s' "$url" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^/@]*@##; s#[?#].*##')
+  host=$(printf '%s' "$without_scheme" | sed -E 's#/.*##; s#\[##; s#\]##; s#:.*##' | tr '[:upper:]' '[:lower:]')
+  path=$(printf '%s' "$without_scheme" | sed -nE 's#[^/]*(/.*)#\1#p')
+  [[ -n "$path" ]] || path="/"
+  path_sanitized=$(printf '%s' "$path" | sed -e 's#[^a-zA-Z0-9._~-]#_#g')
+  printf '%s_%s' "$host" "$path_sanitized"
+}
+
 guessed_wmclass() {
-  printf '%s-%s__-Default' "$(browser_instance_prefix "$1")" "$2"
+  local browser="$1" url="$2"
+  printf '%s-%s-Default' "$(browser_instance_prefix "$browser")" "$(app_name_of_url "$url")"
 }
 
 # Prints the WM_CLASS instance of a visible browser window whose instance
-# contains the given host — the fingerprint of an --app window.
+# contains the given target (app identifier or host) — the fingerprint of an --app window.
 # Returns 1 if no such window is open.
 find_app_wmclass() {
-  local class_re="$1" domain="$2" ids winid raw instance
-  [[ -n "$domain" ]] || return 1
+  local class_re="$1" target="$2" ids winid raw instance
+  [[ -n "$target" ]] || return 1
   ids=$(xdotool search --onlyvisible --class "$class_re" 2>/dev/null) || return 1
   [[ -n "$ids" ]] || return 1
   while IFS= read -r winid; do
@@ -219,7 +243,7 @@ find_app_wmclass() {
     raw=$(xprop -id "$winid" WM_CLASS 2>/dev/null) || continue
     instance=$(printf '%s' "$raw" | sed -n 's/.*= "\([^"]*\)".*/\1/p')
     case "$instance" in
-      *"$domain"*) printf '%s' "$instance"; return 0 ;;
+      *"$target"*) printf '%s' "$instance"; return 0 ;;
     esac
   done <<< "$ids"
   return 1
@@ -231,23 +255,24 @@ find_app_wmclass() {
 # only the class. Returns 1 if no matching window appears.
 detect_wmclass() {
   local browser="$1" profile="$2" url="$3"
-  local domain class_re i
+  local app_name domain class_re i
 
+  app_name=$(app_name_of_url "$url")
   domain=$(domain_of "$url")
   class_re=$(browser_xdotool_class "$browser")
 
-  if find_app_wmclass "$class_re" "$domain"; then
+  if find_app_wmclass "$class_re" "$app_name" || find_app_wmclass "$class_re" "$domain"; then
     printf '%s✓%s Reusing the already-open window.\n' "$C_OK" "$C_RESET" >&2
     return 0
   fi
 
   printf '%s==>%s %s\n' "$C_INFO" "$C_RESET" \
     "Starting $browser — first run can take a few seconds..." >&2
-  "$browser" --user-data-dir="$profile" --app="$url" >/dev/null 2>&1 &
+  "$browser" --user-data-dir="$profile" --start-maximized --app="$url" >/dev/null 2>&1 &
   disown
 
   for ((i = 1; i <= DETECT_TIMEOUT; i++)); do
-    if find_app_wmclass "$class_re" "$domain"; then
+    if find_app_wmclass "$class_re" "$app_name" || find_app_wmclass "$class_re" "$domain"; then
       return 0
     fi
     sleep 1
@@ -316,7 +341,7 @@ write_desktop_file() {
     echo "Version=1.0"
     echo "Name=$name_esc"
     echo "Comment=$name_esc Web App"
-    echo "Exec=$browser --user-data-dir=$profile_arg --app=$url_arg"
+    echo "Exec=$browser --user-data-dir=$profile_arg --start-maximized --app=$url_arg"
     if [[ -n "$icon_path" ]]; then
       echo "Icon=$icon_path"
     fi
@@ -331,7 +356,7 @@ write_desktop_file() {
     echo ""
     echo "[Desktop Action NewWindow]"
     echo "Name=Open $name_esc"
-    echo "Exec=$browser --user-data-dir=$profile_arg --app=$url_arg"
+    echo "Exec=$browser --user-data-dir=$profile_arg --start-maximized --app=$url_arg"
   } > "$file" || die "Failed to write $file"
 
   chmod +x "$file"
@@ -339,6 +364,85 @@ write_desktop_file() {
   if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$file" || warn "desktop-file-validate raised notes above — usually harmless."
   fi
+}
+
+imagemagick() {
+  if command -v magick >/dev/null 2>&1; then
+    magick "$@"
+  elif command -v convert >/dev/null 2>&1; then
+    convert "$@"
+  else
+    return 127
+  fi
+}
+
+# Lossless prepare: trim empty margins, then a square canvas with
+# ICON_PAD_PERCENT padding on every side. No scale/resample.
+# PNG/WebP/ICO keep alpha. JPEG uses white. Prints a status line.
+pad_icon_square() {
+  local file="$1" ext ow oh w h max side tmp_trim tmp_out bg outfmt
+  [[ -f "$file" ]] || return 1
+  ext=$(printf '%s' "${file##*.}" | tr '[:upper:]' '[:lower:]')
+  case "$ext" in
+    png|webp|jpg|jpeg|ico|xpm) ;;
+    svg)
+      printf 'skipped (svg)\n'
+      return 0
+      ;;
+    *)
+      printf 'skipped (%s)\n' "$ext"
+      return 0
+      ;;
+  esac
+  if ! command -v identify >/dev/null 2>&1 || ! imagemagick -version >/dev/null 2>&1; then
+    printf 'skipped (needs ImageMagick: magick or convert)\n'
+    return 0
+  fi
+  read -r ow oh < <(identify -format '%w %h' "$file" 2>/dev/null) || true
+  if [[ -z "${ow:-}" || -z "${oh:-}" ]]; then
+    printf 'skipped (unreadable)\n'
+    return 0
+  fi
+
+  case "$ext" in
+    jpg|jpeg) bg=white; outfmt= ;;
+    *)        bg=none;  outfmt=PNG32: ;;
+  esac
+
+  tmp_trim=$(mktemp --suffix=".$ext")
+  tmp_out=$(mktemp --suffix=".$ext")
+  if ! imagemagick "$file" -alpha set -background "$bg" -fuzz 0% -trim +repage \
+        ${outfmt:+${outfmt}}"$tmp_trim" 2>/dev/null; then
+    rm -f -- "$tmp_trim" "$tmp_out"
+    return 1
+  fi
+  read -r w h < <(identify -format '%w %h' "$tmp_trim" 2>/dev/null) || true
+  if [[ -z "${w:-}" || -z "${h:-}" || "$w" -eq 0 || "$h" -eq 0 ]]; then
+    rm -f -- "$tmp_trim" "$tmp_out"
+    printf 'skipped (empty after trim)\n'
+    return 0
+  fi
+  if [[ "$w" -gt "$h" ]]; then
+    max=$w
+  else
+    max=$h
+  fi
+  side=$(awk -v m="$max" -v p="$ICON_PAD_PERCENT" 'BEGIN {
+    s = int(m * (1 + 2 * p / 100) + 0.5)
+    if (s < m) s = m
+    printf "%d", s
+  }')
+
+  if ! imagemagick "$tmp_trim" -background "$bg" -gravity center \
+        -extent "${side}x${side}" ${outfmt:+${outfmt}}"$tmp_out"; then
+    rm -f -- "$tmp_trim" "$tmp_out"
+    return 1
+  fi
+  mv -f -- "$tmp_out" "$file"
+  rm -f -- "$tmp_trim"
+  printf '%sx%s → trim %sx%s → %sx%s (+%s%%)\n' \
+    "$ow" "$oh" "$w" "$h" "$side" "$side" "$ICON_PAD_PERCENT"
+  return 0
 }
 
 copy_icon() {
@@ -438,10 +542,12 @@ cmd_create() {
     [[ -f "$icon" ]] || die "Icon file not found: $icon"
     icon_path=$(copy_icon "$icon" "$slug") || die "Failed to copy icon from $icon"
     ok "Icon copied to $icon_path"
+    apply_icon_square "$icon_path"
   elif command -v curl >/dev/null 2>&1; then
     icon_path="$ICON_DIR/$slug.png"
     if fetch_favicon "$url" "$icon_path"; then
       ok "Fetched a favicon to $icon_path (swap in a nicer PNG any time)."
+      apply_icon_square "$icon_path"
     else
       warn "No icon set — pass --icon PATH, or drop a PNG at $icon_path later."
       icon_path=''
@@ -451,7 +557,7 @@ cmd_create() {
   fi
 
   local guess_wmclass
-  guess_wmclass=$(guessed_wmclass "$browser" "$domain")
+  guess_wmclass=$(guessed_wmclass "$browser" "$url")
 
   write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
     "$categories" "$guess_wmclass" "$profile"
@@ -459,6 +565,7 @@ cmd_create() {
 
   if [[ "$no_detect" -eq 1 ]]; then
     ok "Set StartupWMClass=$guess_wmclass (--no-detect; not confirmed from a window)."
+    first_run_hint "$name"
     manual_wmclass_hint "$slug" "$name"
     return 0
   fi
@@ -468,7 +575,7 @@ cmd_create() {
       warn "Pure Wayland session (no \$DISPLAY) — cannot read WM_CLASS automatically."
     fi
     ok "Set StartupWMClass=$guess_wmclass (not confirmed from a window)."
-    ok "$name launcher is ready. Log in, then right-click its dock icon and choose Add to Favorites."
+    first_run_hint "$name"
     manual_wmclass_hint "$slug" "$name"
     return 0
   fi
@@ -479,10 +586,10 @@ cmd_create() {
     write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
       "$categories" "$real_wmclass" "$profile"
     ok "Confirmed StartupWMClass=$real_wmclass"
-    ok "$name is open. Log in, then right-click its dock icon and choose Add to Favorites."
+    first_run_hint "$name"
   else
     ok "Configured StartupWMClass=$guess_wmclass (window class was not confirmed in time)."
-    ok "$name should be open. Log in, then right-click its dock icon and choose Add to Favorites."
+    first_run_hint "$name"
     manual_wmclass_hint "$slug" "$name"
   fi
 }
@@ -566,7 +673,7 @@ cmd_fix_wmclass() {
   [[ -n "$domain" ]] || die "Could not parse a hostname from URL: $url"
 
   local guess_wmclass
-  guess_wmclass=$(guessed_wmclass "$browser" "$domain")
+  guess_wmclass=$(guessed_wmclass "$browser" "$url")
 
   if ! ensure_detect_deps || ! x_reachable; then
     write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
@@ -590,6 +697,62 @@ cmd_fix_wmclass() {
   fi
 }
 
+first_run_hint() {
+  local name="$1"
+  warn "First launch of an isolated profile: if Chrome asks to set itself as the default browser (or similar), dismiss it — do not accept."
+  ok "Log in to $name, then right-click its dock icon and choose Add to Favorites."
+}
+
+apply_icon_square() {
+  local path="$1" status
+  [[ -n "$path" && -f "$path" ]] || return 0
+  status=$(pad_icon_square "$path") || {
+    warn "Could not square $path"
+    return 0
+  }
+  case "$status" in
+    skipped*) warn "Icon not prepared: $status" ;;
+    *)        ok "Icon prepared ($status)" ;;
+  esac
+}
+
+cmd_square_icon() {
+  local target="$1" file slug icon_path status n=0
+  if [[ "$target" == --all ]]; then
+    local old_nullglob
+    old_nullglob=$(shopt -p nullglob)
+    shopt -s nullglob
+    for file in "$APP_DIR"/*.desktop; do
+      is_managed_desktop "$file" || continue
+      slug=$(desktop_key "$file" X-WebAppSlug)
+      [[ -n "$slug" ]] || slug=$(basename "$file" .desktop)
+      icon_path=$(desktop_key "$file" Icon)
+      if [[ -z "$icon_path" || ! -f "$icon_path" ]]; then
+        warn "$slug: no icon file"
+        continue
+      fi
+      status=$(pad_icon_square "$icon_path") || {
+        warn "$slug: failed to square $icon_path"
+        continue
+      }
+      ok "$slug: $status"
+      n=$((n + 1))
+    done
+    eval "$old_nullglob"
+    [[ "$n" -gt 0 ]] || info "No managed icons found."
+    return 0
+  fi
+
+  slug="$target"
+  file=$(desktop_file_for "$slug")
+  [[ -e "$file" ]] || die "No launcher found for slug '$slug' — run '$0 list'."
+  is_managed_desktop "$file" || die "Refusing — '$file' is not a web-app launcher."
+  icon_path=$(desktop_key "$file" Icon)
+  [[ -n "$icon_path" && -f "$icon_path" ]] || die "No icon file for '$slug'."
+  status=$(pad_icon_square "$icon_path") || die "Failed to square $icon_path"
+  ok "$slug: $status"
+}
+
 # ---------- main ----------
 
 main() {
@@ -606,6 +769,7 @@ main() {
     list)        cmd_list ;;
     remove)      [[ $# -eq 1 ]] || die "Usage: $0 remove SLUG";      cmd_remove "$1" ;;
     fix-wmclass) [[ $# -eq 1 ]] || die "Usage: $0 fix-wmclass SLUG"; cmd_fix_wmclass "$1" ;;
+    square-icon) [[ $# -eq 1 ]] || die "Usage: $0 square-icon SLUG|--all"; cmd_square_icon "$1" ;;
     -h | --help) usage ;;
     *)           usage >&2; exit 1 ;;
   esac

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Codeforces
+Comment=Codeforces Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-codeforces" --start-maximized --app="https://codeforces.com/"
+Icon=/home/andys-tmc/.local/share/icons/codeforces.png
+Terminal=false
+Type=Application
+Categories=Development;
+StartupWMClass=chrome-codeforces.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=codeforces
+
+[Desktop Action NewWindow]
+Name=Open Codeforces
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-codeforces" --start-maximized --app="https://codeforces.com/"

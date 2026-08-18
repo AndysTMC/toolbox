@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Flipkart
+Comment=Flipkart Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-flipkart" --start-maximized --app="https://www.flipkart.com/"
+Icon=/home/andys-tmc/.local/share/icons/flipkart.png
+Terminal=false
+Type=Application
+Categories=Network;
+StartupWMClass=chrome-www.flipkart.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=flipkart
+
+[Desktop Action NewWindow]
+Name=Open Flipkart
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-flipkart" --start-maximized --app="https://www.flipkart.com/"

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Gmail
+Comment=Gmail Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-gmail" --start-maximized --app="https://mail.google.com/"
+Icon=/home/andys-tmc/.local/share/icons/gmail.png
+Terminal=false
+Type=Application
+Categories=Network;Email;
+StartupWMClass=chrome-mail.google.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=gmail
+
+[Desktop Action NewWindow]
+Name=Open Gmail
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-gmail" --start-maximized --app="https://mail.google.com/"

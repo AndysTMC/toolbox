@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Google Photos
+Comment=Google Photos Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-photos" --start-maximized --app="https://photos.google.com/"
+Icon=/home/andys-tmc/.local/share/icons/google-photos.png
+Terminal=false
+Type=Application
+Categories=Graphics;Photography;
+StartupWMClass=chrome-photos.google.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=google-photos
+
+[Desktop Action NewWindow]
+Name=Open Google Photos
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-photos" --start-maximized --app="https://photos.google.com/"

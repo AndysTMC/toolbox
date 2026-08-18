@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Apple Music
+Comment=Apple Music Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-apple-music" --start-maximized --app="https://music.apple.com/"
+Icon=/home/andys-tmc/.local/share/icons/apple-music.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;
+StartupWMClass=chrome-music.apple.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=apple-music
+
+[Desktop Action NewWindow]
+Name=Open Apple Music
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-apple-music" --start-maximized --app="https://music.apple.com/"

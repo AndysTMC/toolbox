@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Amazon
+Comment=Amazon Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-amazon" --start-maximized --app="https://www.amazon.in/"
+Icon=/home/andys-tmc/.local/share/icons/amazon.png
+Terminal=false
+Type=Application
+Categories=Network;
+StartupWMClass=chrome-www.amazon.in__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=amazon
+
+[Desktop Action NewWindow]
+Name=Open Amazon
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-amazon" --start-maximized --app="https://www.amazon.in/"

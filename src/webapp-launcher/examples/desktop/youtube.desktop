@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=YouTube
+Comment=YouTube Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-youtube" --start-maximized --app="https://www.youtube.com/"
+Icon=/home/andys-tmc/.local/share/icons/youtube.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;
+StartupWMClass=chrome-www.youtube.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=youtube
+
+[Desktop Action NewWindow]
+Name=Open YouTube
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-youtube" --start-maximized --app="https://www.youtube.com/"

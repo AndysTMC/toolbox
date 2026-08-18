@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=LeetCode
+Comment=LeetCode Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-leetcode" --start-maximized --app="https://leetcode.com/"
+Icon=/home/andys-tmc/.local/share/icons/leetcode.png
+Terminal=false
+Type=Application
+Categories=Development;
+StartupWMClass=chrome-leetcode.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=leetcode
+
+[Desktop Action NewWindow]
+Name=Open LeetCode
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-leetcode" --start-maximized --app="https://leetcode.com/"

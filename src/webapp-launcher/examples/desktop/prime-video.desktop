@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Prime Video
+Comment=Prime Video Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-prime-video" --start-maximized --app="https://www.primevideo.com/"
+Icon=/home/andys-tmc/.local/share/icons/prime-video.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;
+StartupWMClass=chrome-www.primevideo.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=prime-video
+
+[Desktop Action NewWindow]
+Name=Open Prime Video
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-prime-video" --start-maximized --app="https://www.primevideo.com/"

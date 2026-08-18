@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=X
+Comment=X Web App
+Exec=google-chrome --user-data-dir=/home/andys-tmc/.config/chrome-x --start-maximized --app=https://x.com
+Icon=/home/andys-tmc/.local/share/icons/x.png
+Terminal=false
+Type=Application
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=chrome-x.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=x
+
+[Desktop Action NewWindow]
+Name=Open X
+Exec=google-chrome --user-data-dir=/home/andys-tmc/.config/chrome-x --start-maximized --app=https://x.com

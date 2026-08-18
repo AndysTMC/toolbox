@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=LinkedIn
+Comment=LinkedIn Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-linkedin" --start-maximized --app="https://www.linkedin.com/"
+Icon=/home/andys-tmc/.local/share/icons/linkedin.png
+Terminal=false
+Type=Application
+Categories=Network;
+StartupWMClass=chrome-www.linkedin.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=linkedin
+
+[Desktop Action NewWindow]
+Name=Open LinkedIn
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-linkedin" --start-maximized --app="https://www.linkedin.com/"

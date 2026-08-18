@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Google Finance
+Comment=Google Finance Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-finance" --start-maximized --app="https://www.google.com/finance/"
+Icon=/home/andys-tmc/.local/share/icons/google-finance.png
+Terminal=false
+Type=Application
+Categories=Office;Finance;
+StartupWMClass=chrome-www.google.com__finance_-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=google-finance
+
+[Desktop Action NewWindow]
+Name=Open Google Finance
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-finance" --start-maximized --app="https://www.google.com/finance/"

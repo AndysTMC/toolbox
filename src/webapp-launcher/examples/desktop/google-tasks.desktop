@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Google Tasks
+Comment=Google Tasks Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-tasks" --start-maximized --app="https://tasks.google.com/"
+Icon=/home/andys-tmc/.local/share/icons/google-tasks.png
+Terminal=false
+Type=Application
+Categories=Office;
+StartupWMClass=chrome-tasks.google.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=google-tasks
+
+[Desktop Action NewWindow]
+Name=Open Google Tasks
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-tasks" --start-maximized --app="https://tasks.google.com/"

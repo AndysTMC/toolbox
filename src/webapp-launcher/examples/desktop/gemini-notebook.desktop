@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Gemini Notebook
+Comment=Gemini Notebook Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-gemini-notebook" --start-maximized --app="https://notebook.google.com/"
+Icon=/home/andys-tmc/.local/share/icons/gemini-notebook.png
+Terminal=false
+Type=Application
+Categories=Office;
+StartupWMClass=chrome-notebook.google.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=gemini-notebook
+
+[Desktop Action NewWindow]
+Name=Open Gemini Notebook
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-gemini-notebook" --start-maximized --app="https://notebook.google.com/"

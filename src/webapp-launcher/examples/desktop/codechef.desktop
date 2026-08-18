@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=CodeChef
+Comment=CodeChef Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-codechef" --start-maximized --app="https://www.codechef.com/"
+Icon=/home/andys-tmc/.local/share/icons/codechef.png
+Terminal=false
+Type=Application
+Categories=Development;
+StartupWMClass=chrome-www.codechef.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=codechef
+
+[Desktop Action NewWindow]
+Name=Open CodeChef
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-codechef" --start-maximized --app="https://www.codechef.com/"

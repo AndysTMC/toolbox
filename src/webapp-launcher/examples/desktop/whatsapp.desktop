@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=1.0
+Name=WhatsApp
+Comment=WhatsApp Web App
+Exec=google-chrome --user-data-dir=/home/andys-tmc/.config/chrome-whatsapp --start-maximized --app=https://web.whatsapp.com/
+Icon=/home/andys-tmc/.local/share/icons/whatsapp.png
+Terminal=false
+Type=Application
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=chrome-web.whatsapp.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+
+[Desktop Action NewWindow]
+Name=Open WhatsApp
+Exec=google-chrome --user-data-dir=/home/andys-tmc/.config/chrome-whatsapp --start-maximized --app=https://web.whatsapp.com/

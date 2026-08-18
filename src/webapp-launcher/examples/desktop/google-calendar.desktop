@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Google Calendar
+Comment=Google Calendar Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-calendar" --start-maximized --app="https://calendar.google.com/"
+Icon=/home/andys-tmc/.local/share/icons/google-calendar.png
+Terminal=false
+Type=Application
+Categories=Office;Calendar;
+StartupWMClass=chrome-calendar.google.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=google-calendar
+
+[Desktop Action NewWindow]
+Name=Open Google Calendar
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-google-calendar" --start-maximized --app="https://calendar.google.com/"

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=JioHotstar
+Comment=JioHotstar Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-jiohotstar" --start-maximized --app="https://www.hotstar.com/"
+Icon=/home/andys-tmc/.local/share/icons/jiohotstar.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;
+StartupWMClass=chrome-www.hotstar.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=jiohotstar
+
+[Desktop Action NewWindow]
+Name=Open JioHotstar
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-jiohotstar" --start-maximized --app="https://www.hotstar.com/"

@@ -10,6 +10,7 @@ There is no package manager, dev server, or CI.
 - Test (full): `bash -n src/webapp-launcher/webapp-launcher`
 - Lint (knowledge): `python3 scripts/lint_knowledge.py --strict` (vendored from knowledge-architecture v0.1.0)
 - Lint (script): `bash -n src/webapp-launcher/webapp-launcher`; `shellcheck src/webapp-launcher/webapp-launcher` if the host has it
+- Prepare existing web-app icons (trim + 5% pad): `src/webapp-launcher/webapp-launcher square-icon --all` (needs ImageMagick)
 
 `desktop-file-validate` and `gtk-launch` apply to generated user files under `~/.local/share/applications/`, not this tree.
 
@@ -36,6 +37,7 @@ There is no package manager, dev server, or CI.
 |---|---|
 | What this is | README.md |
 | How to run webapp-launcher | src/webapp-launcher/README.md |
+| Example launchers / icons | src/webapp-launcher/examples/README.md |
 
 ## After you finish
 

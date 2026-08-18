@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Name=Gemini
+Comment=Gemini Web App
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-gemini" --start-maximized --app="https://gemini.google.com/"
+Icon=/home/andys-tmc/.local/share/icons/gemini.png
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupWMClass=chrome-gemini.google.com__-Default
+StartupNotify=true
+Actions=NewWindow;
+X-WebAppLauncher=true
+X-WebAppSlug=gemini
+
+[Desktop Action NewWindow]
+Name=Open Gemini
+Exec=/usr/bin/google-chrome --user-data-dir="/home/andys-tmc/.config/chrome-gemini" --start-maximized --app="https://gemini.google.com/"
