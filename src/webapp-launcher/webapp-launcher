@@ -1,0 +1,616 @@
+#!/usr/bin/env bash
+#
+# webapp-launcher — turn any website into a standalone dock app on a
+# Chromium-based browser + GNOME. Isolated profile, icon, .desktop file,
+# and StartupWMClass read off the real window instead of guessed.
+#
+# Detection: an --app window is a visible browser window whose WM_CLASS
+# instance contains the site's host (e.g. chrome-web.whatsapp.com__-Default).
+# Matching on window title is wrong in both directions: sites that set
+# their own document.title fail the search, and a normal browser tab
+# whose title happens to contain the host can match instead — its
+# instance is bare "chrome", which would silently regroup the app
+# under Chrome.
+#
+# Auto-detection needs xdotool + xprop and a reachable X display (X11 or
+# XWayland). If any of that is missing the script writes the usual
+# "<browser>-<host>__-Default" class, prints Looking Glass instructions,
+# and never pretends the value was confirmed.
+#
+# Usage:
+#   webapp-launcher create [--name NAME] [--slug SLUG] [--url URL]
+#                          [--icon PATH] [--browser BIN]
+#                          [--categories STR] [--no-detect]
+#   webapp-launcher list
+#   webapp-launcher remove SLUG
+#   webapp-launcher fix-wmclass SLUG
+#   webapp-launcher -h | --help
+#
+# Flags left out of create are prompted for — but only when stdin is a
+# terminal. Piped or CI runs exit with a usage error instead of silently
+# answering prompts from piped input.
+
+set -uo pipefail
+
+APP_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons"
+CONFIG_ROOT="$HOME/.config"
+DETECT_TIMEOUT=30
+
+# ---------- output ----------
+
+if [[ -t 1 ]]; then
+  C_INFO=$'\033[1;34m'
+  C_OK=$'\033[1;32m'
+  C_WARN=$'\033[1;33m'
+  C_ERR=$'\033[1;31m'
+  C_RESET=$'\033[0m'
+else
+  C_INFO=''
+  C_OK=''
+  C_WARN=''
+  C_ERR=''
+  C_RESET=''
+fi
+
+info() { printf '%s==>%s %s\n' "$C_INFO" "$C_RESET" "$*"; }
+ok()   { printf '%s✓%s %s\n' "$C_OK" "$C_RESET" "$*"; }
+warn() { printf '%s!%s %s\n' "$C_WARN" "$C_RESET" "$*"; }
+err()  { printf '%s✗%s %s\n' "$C_ERR" "$C_RESET" "$*" >&2; }
+die()  { err "$*"; exit 1; }
+
+usage() {
+  cat <<'EOF'
+webapp-launcher — turn any website into a standalone dock app
+
+Usage:
+  webapp-launcher create [--name NAME] [--slug SLUG] [--url URL]
+                         [--icon PATH] [--browser BIN]
+                         [--categories STR] [--no-detect]
+  webapp-launcher list
+  webapp-launcher remove SLUG
+  webapp-launcher fix-wmclass SLUG
+  webapp-launcher -h | --help
+
+Flags left out of create are prompted for (interactive runs only).
+
+Examples:
+  webapp-launcher create --name WhatsApp --slug whatsapp \
+    --url https://web.whatsapp.com/
+  webapp-launcher create                  # fully interactive
+  webapp-launcher fix-wmclass whatsapp    # after a browser update
+  webapp-launcher remove whatsapp
+EOF
+}
+
+# ---------- small helpers ----------
+
+slugify() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -s ' ' '-' | tr -cd 'a-z0-9-'
+}
+
+# Host of a URL: strip scheme, userinfo, path, port.
+domain_of() {
+  printf '%s' "$1" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^/@]*@##; s#/.*##; s#\[##; s#\]##; s#:.*##'
+}
+
+desktop_file_for() { printf '%s/%s.desktop' "$APP_DIR" "$1"; }
+profile_dir_for()  { printf '%s/chrome-%s' "$CONFIG_ROOT" "$1"; }
+
+# Escape a Desktop Entry string value (\ = ;).
+desktop_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/=/\\=/g' -e 's/;/\\;/g'
+}
+
+# Inverse of desktop_escape. Order: \\= / \\; first, then \\.
+desktop_unescape() {
+  printf '%s' "$1" | sed -e 's/\\=/=/g' -e 's/\\;/;/g' -e 's/\\\\/\\/g'
+}
+
+# One Exec argument, quoted per the Desktop Entry spec.
+desktop_exec_arg() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//\$/\\\$}
+  s=${s//\`/\\\`}
+  printf '"%s"' "$s"
+}
+
+desktop_key() {
+  local file="$1" key="$2" val
+  val=$(grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2-) || val=''
+  desktop_unescape "$val"
+}
+
+# Pull --app= URL out of an Exec line. Handles quoted and bare forms.
+app_url_from_exec() {
+  local exec_line="$1" url
+  url=$(printf '%s' "$exec_line" | sed -n 's/.*--app="//p' | sed 's/"[[:space:]]*$//')
+  if [[ -z "$url" ]]; then
+    url=$(printf '%s' "$exec_line" | sed -n 's/.*--app=//p' | tr -d '"')
+  fi
+  printf '%s' "$url"
+}
+
+is_managed_desktop() {
+  local file="$1"
+  grep -q '^X-WebAppLauncher=true' "$file" 2>/dev/null && return 0
+  grep -q -- '--app=' "$file" 2>/dev/null && grep -q -- '--user-data-dir=' "$file" 2>/dev/null
+}
+
+# ask PROMPT VAR — read a value into VAR, but only from a real terminal.
+# Piped/CI runs fail fast so a flag can never be silently answered by
+# the next line of piped input.
+ask() {
+  local prompt="$1" target="$2" val=''
+  if [[ ! -t 0 ]]; then
+    err "Not a terminal — cannot prompt: $prompt"
+    return 1
+  fi
+  read -rp "$prompt: " val || val=''
+  printf -v "$target" '%s' "$val"
+  return 0
+}
+
+refresh_db() {
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
+  fi
+}
+
+detect_browser() {
+  local b
+  for b in google-chrome google-chrome-stable chromium chromium-browser \
+           brave-browser brave vivaldi-stable microsoft-edge microsoft-edge-stable; do
+    if command -v "$b" >/dev/null 2>&1; then
+      printf '%s' "$b"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Resolve to an absolute path so .desktop files still work when GNOME's
+# PATH is narrower than the terminal's.
+resolve_browser() {
+  local resolved
+  resolved=$(command -v "$1") || return 1
+  printf '%s' "$resolved"
+}
+
+# xdotool --class regex for the browser's WM_CLASS *class* (2nd field).
+browser_xdotool_class() {
+  case "$1" in
+    *chromium*) printf 'chromium' ;;
+    *brave*)    printf 'brave' ;;
+    *vivaldi*)  printf 'vivaldi' ;;
+    *edge*)     printf 'edge' ;;
+    *)          printf 'chrome' ;;
+  esac
+}
+
+# Prefix Chrome-family browsers put on --app window instances:
+#   chrome-web.whatsapp.com__-Default
+browser_instance_prefix() {
+  case "$1" in
+    *chromium*) printf 'chromium' ;;
+    *brave*)    printf 'brave' ;;
+    *vivaldi*)  printf 'vivaldi' ;;
+    *edge*)     printf 'msedge' ;;
+    *)          printf 'chrome' ;;
+  esac
+}
+
+guessed_wmclass() {
+  printf '%s-%s__-Default' "$(browser_instance_prefix "$1")" "$2"
+}
+
+# Prints the WM_CLASS instance of a visible browser window whose instance
+# contains the given host — the fingerprint of an --app window.
+# Returns 1 if no such window is open.
+find_app_wmclass() {
+  local class_re="$1" domain="$2" ids winid raw instance
+  [[ -n "$domain" ]] || return 1
+  ids=$(xdotool search --onlyvisible --class "$class_re" 2>/dev/null) || return 1
+  [[ -n "$ids" ]] || return 1
+  while IFS= read -r winid; do
+    [[ -n "$winid" ]] || continue
+    raw=$(xprop -id "$winid" WM_CLASS 2>/dev/null) || continue
+    instance=$(printf '%s' "$raw" | sed -n 's/.*= "\([^"]*\)".*/\1/p')
+    case "$instance" in
+      *"$domain"*) printf '%s' "$instance"; return 0 ;;
+    esac
+  done <<< "$ids"
+  return 1
+}
+
+# Prints the confirmed WM_CLASS instance for the app URL. Prefers a
+# window that is already open; otherwise launches the app and polls for
+# up to DETECT_TIMEOUT seconds. Status goes to stderr so stdout carries
+# only the class. Returns 1 if no matching window appears.
+detect_wmclass() {
+  local browser="$1" profile="$2" url="$3"
+  local domain class_re i
+
+  domain=$(domain_of "$url")
+  class_re=$(browser_xdotool_class "$browser")
+
+  if find_app_wmclass "$class_re" "$domain"; then
+    printf '%s✓%s Reusing the already-open window.\n' "$C_OK" "$C_RESET" >&2
+    return 0
+  fi
+
+  printf '%s==>%s %s\n' "$C_INFO" "$C_RESET" \
+    "Starting $browser — first run can take a few seconds..." >&2
+  "$browser" --user-data-dir="$profile" --app="$url" >/dev/null 2>&1 &
+  disown
+
+  for ((i = 1; i <= DETECT_TIMEOUT; i++)); do
+    if find_app_wmclass "$class_re" "$domain"; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
+# Ensures xdotool + xprop are present; offers to apt-install if missing.
+# Returns 1 (without erroring the script) if the user declines, the
+# install fails, or the run is non-interactive — callers fall back to
+# manual instructions.
+ensure_detect_deps() {
+  if command -v xdotool >/dev/null 2>&1 && command -v xprop >/dev/null 2>&1; then
+    return 0
+  fi
+  warn "xdotool/xprop are missing — they let the script read the real StartupWMClass automatically."
+  local reply=''
+  ask "Install them now (sudo apt-get install xdotool x11-utils) [Y/n]" reply || return 1
+  if [[ "$reply" =~ ^[Nn] ]]; then
+    return 1
+  fi
+  if sudo apt-get install -y xdotool x11-utils; then
+    ok "Installed xdotool and x11-utils."
+    return 0
+  fi
+  warn "Install failed — check sudo and your distro (this path is Debian/Ubuntu-only)."
+  return 1
+}
+
+# X11/XWayland reachable? Pure-Wayland Chrome has no X window class to read.
+x_reachable() {
+  [[ -n "${DISPLAY:-}" ]] || return 1
+  command -v xdotool >/dev/null 2>&1 || return 1
+  xdotool getdisplaygeometry >/dev/null 2>&1
+}
+
+manual_wmclass_hint() {
+  local slug="$1" name="$2"
+  cat <<EOF
+
+  Manual fallback (one time, about a minute):
+  1. Open $name from the Activities search — the launcher is installed.
+  2. Press Alt+F2, type 'lg', Enter (GNOME Looking Glass).
+  3. Windows tab -> find $name -> note its 'wmclass' value.
+  4. Edit StartupWMClass in: $(desktop_file_for "$slug")
+     ...or simply rerun:  $0 fix-wmclass $slug
+EOF
+}
+
+# Writes/overwrites the .desktop file for a slug from the given fields.
+write_desktop_file() {
+  local slug="$1" name="$2" url="$3" icon_path="$4" browser="$5"
+  local categories="$6" wmclass="$7" profile="$8"
+  local file name_esc profile_arg url_arg
+
+  file=$(desktop_file_for "$slug")
+  name_esc=$(desktop_escape "$name")
+  profile_arg=$(desktop_exec_arg "$profile")
+  url_arg=$(desktop_exec_arg "$url")
+
+  [[ -z "$categories" || "$categories" == *\; ]] || categories="${categories};"
+
+  {
+    echo "[Desktop Entry]"
+    echo "Version=1.0"
+    echo "Name=$name_esc"
+    echo "Comment=$name_esc Web App"
+    echo "Exec=$browser --user-data-dir=$profile_arg --app=$url_arg"
+    if [[ -n "$icon_path" ]]; then
+      echo "Icon=$icon_path"
+    fi
+    echo "Terminal=false"
+    echo "Type=Application"
+    echo "Categories=$categories"
+    echo "StartupWMClass=$wmclass"
+    echo "StartupNotify=true"
+    echo "Actions=NewWindow;"
+    echo "X-WebAppLauncher=true"
+    echo "X-WebAppSlug=$slug"
+    echo ""
+    echo "[Desktop Action NewWindow]"
+    echo "Name=Open $name_esc"
+    echo "Exec=$browser --user-data-dir=$profile_arg --app=$url_arg"
+  } > "$file" || die "Failed to write $file"
+
+  chmod +x "$file"
+  refresh_db
+  if command -v desktop-file-validate >/dev/null 2>&1; then
+    desktop-file-validate "$file" || warn "desktop-file-validate raised notes above — usually harmless."
+  fi
+}
+
+copy_icon() {
+  local src="$1" slug="$2" ext dest
+  ext=$(printf '%s' "${src##*.}" | tr '[:upper:]' '[:lower:]')
+  case "$ext" in
+    png|svg|xpm|ico|jpg|jpeg|webp) ;;
+    *) ext=png ;;
+  esac
+  dest="$ICON_DIR/$slug.$ext"
+  cp -- "$src" "$dest" || return 1
+  printf '%s' "$dest"
+}
+
+fetch_favicon() {
+  local url="$1" out="$2" domain
+  domain=$(domain_of "$url")
+  [[ -n "$domain" ]] || return 1
+  curl -fsSL "https://www.google.com/s2/favicons?sz=256&domain=$domain" -o "$out" 2>/dev/null || return 1
+  [[ -s "$out" ]] || { rm -f -- "$out"; return 1; }
+  return 0
+}
+
+# ---------- commands ----------
+
+cmd_create() {
+  local name='' slug='' url='' icon='' browser='' categories=''
+  local no_detect=0 slug_explicit=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)       [[ $# -ge 2 ]] || die "--name needs a value";       name="$2"; shift 2 ;;
+      --slug)       [[ $# -ge 2 ]] || die "--slug needs a value";       slug="$2"; slug_explicit=1; shift 2 ;;
+      --url)        [[ $# -ge 2 ]] || die "--url needs a value";        url="$2"; shift 2 ;;
+      --icon)       [[ $# -ge 2 ]] || die "--icon needs a value";       icon="$2"; shift 2 ;;
+      --browser)    [[ $# -ge 2 ]] || die "--browser needs a value";    browser="$2"; shift 2 ;;
+      --categories) [[ $# -ge 2 ]] || die "--categories needs a value"; categories="$2"; shift 2 ;;
+      --no-detect)  no_detect=1; shift ;;
+      *)            die "Unknown option: $1 (see --help)" ;;
+    esac
+  done
+
+  if [[ -z "$name" ]]; then
+    ask "Site name (e.g. WhatsApp)" name || die "Name is required — pass --name NAME."
+  fi
+  [[ -n "$name" ]] || die "Name is required — pass --name NAME."
+
+  if [[ -z "$slug" ]]; then
+    slug=$(slugify "$name")
+  fi
+  if [[ "$slug_explicit" -eq 0 ]]; then
+    local slug_in=''
+    ask "Slug [auto: $slug]" slug_in || slug_in=''
+    if [[ -n "$slug_in" ]]; then
+      slug="$slug_in"
+    fi
+  fi
+  if [[ -z "$slug" || ! "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    die "Slug must be lowercase letters/digits/hyphens (got: '$slug')."
+  fi
+
+  if [[ -z "$url" ]]; then
+    ask "URL (e.g. https://web.whatsapp.com/)" url || die "URL is required — pass --url URL."
+  fi
+  if [[ ! "$url" =~ ^https?:// ]]; then
+    die "URL must start with http:// or https:// (got: '$url')."
+  fi
+
+  local domain
+  domain=$(domain_of "$url")
+  [[ -n "$domain" ]] || die "Could not parse a hostname from URL: $url"
+
+  [[ -n "$categories" ]] || categories='Network;'
+
+  if [[ -z "$browser" ]]; then
+    browser=$(detect_browser) || die "No Chromium-based browser on PATH. Install one or pass --browser BIN."
+  fi
+  browser=$(resolve_browser "$browser") || die "Browser '$browser' not found on PATH."
+
+  local file
+  file=$(desktop_file_for "$slug")
+  if [[ -e "$file" ]]; then
+    local overwrite=''
+    ask "A launcher for '$slug' already exists — overwrite [y/N]" overwrite || overwrite=''
+    if [[ ! "$overwrite" =~ ^[Yy] ]]; then
+      die "Aborted."
+    fi
+  fi
+
+  mkdir -p "$APP_DIR" "$ICON_DIR" || die "Cannot create $APP_DIR or $ICON_DIR"
+  local profile
+  profile=$(profile_dir_for "$slug")
+  mkdir -p "$profile" || die "Cannot create profile directory $profile"
+
+  local icon_path=''
+  if [[ -n "$icon" ]]; then
+    [[ -f "$icon" ]] || die "Icon file not found: $icon"
+    icon_path=$(copy_icon "$icon" "$slug") || die "Failed to copy icon from $icon"
+    ok "Icon copied to $icon_path"
+  elif command -v curl >/dev/null 2>&1; then
+    icon_path="$ICON_DIR/$slug.png"
+    if fetch_favicon "$url" "$icon_path"; then
+      ok "Fetched a favicon to $icon_path (swap in a nicer PNG any time)."
+    else
+      warn "No icon set — pass --icon PATH, or drop a PNG at $icon_path later."
+      icon_path=''
+    fi
+  else
+    warn "No icon set — pass --icon PATH, or drop a PNG at $ICON_DIR/$slug.png later."
+  fi
+
+  local guess_wmclass
+  guess_wmclass=$(guessed_wmclass "$browser" "$domain")
+
+  write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
+    "$categories" "$guess_wmclass" "$profile"
+  ok "Launcher created: $file"
+
+  if [[ "$no_detect" -eq 1 ]]; then
+    ok "Set StartupWMClass=$guess_wmclass (--no-detect; not confirmed from a window)."
+    manual_wmclass_hint "$slug" "$name"
+    return 0
+  fi
+
+  if ! ensure_detect_deps || ! x_reachable; then
+    if [[ "${XDG_SESSION_TYPE:-}" == wayland && -z "${DISPLAY:-}" ]]; then
+      warn "Pure Wayland session (no \$DISPLAY) — cannot read WM_CLASS automatically."
+    fi
+    ok "Set StartupWMClass=$guess_wmclass (not confirmed from a window)."
+    ok "$name launcher is ready. Log in, then right-click its dock icon and choose Add to Favorites."
+    manual_wmclass_hint "$slug" "$name"
+    return 0
+  fi
+
+  info "Opening $name to confirm window class (reusing window if open)..."
+  local real_wmclass
+  if real_wmclass=$(detect_wmclass "$browser" "$profile" "$url"); then
+    write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
+      "$categories" "$real_wmclass" "$profile"
+    ok "Confirmed StartupWMClass=$real_wmclass"
+    ok "$name is open. Log in, then right-click its dock icon and choose Add to Favorites."
+  else
+    ok "Configured StartupWMClass=$guess_wmclass (window class was not confirmed in time)."
+    ok "$name should be open. Log in, then right-click its dock icon and choose Add to Favorites."
+    manual_wmclass_hint "$slug" "$name"
+  fi
+}
+
+cmd_list() {
+  local found=0 f slug name url wmclass
+  local old_nullglob
+  old_nullglob=$(shopt -p nullglob)
+  shopt -s nullglob
+  printf '%-14s %-16s %-34s %s\n' 'SLUG' 'NAME' 'STARTUPWMCLASS' 'URL'
+  for f in "$APP_DIR"/*.desktop; do
+    is_managed_desktop "$f" || continue
+    slug=$(desktop_key "$f" X-WebAppSlug)
+    [[ -n "$slug" ]] || slug=$(basename "$f" .desktop)
+    found=1
+    name=$(desktop_key "$f" Name)
+    wmclass=$(desktop_key "$f" StartupWMClass)
+    url=$(app_url_from_exec "$(grep -m1 '^Exec=' "$f" || true)")
+    printf '%-14s %-16s %-34s %s\n' "$slug" "$name" "$wmclass" "$url"
+  done
+  eval "$old_nullglob"
+  if [[ "$found" -eq 0 ]]; then
+    echo ''
+    info "No web-app launchers yet. Create one: $0 create"
+  fi
+}
+
+cmd_remove() {
+  local slug="$1"
+  local file profile name reply
+  file=$(desktop_file_for "$slug")
+  [[ -e "$file" ]] || die "No launcher found for slug '$slug' — run '$0 list'."
+  is_managed_desktop "$file" || die "Refusing to remove '$file' — it is not a web-app launcher."
+
+  name=$(desktop_key "$file" Name)
+
+  rm -f -- "$file"
+  # Icon may have been stored as .png or another extension.
+  rm -f -- "$ICON_DIR/$slug".{png,svg,xpm,ico,jpg,jpeg,webp}
+  refresh_db
+  ok "Removed launcher and icon for '$slug'."
+  if [[ -n "$name" ]]; then
+    info "If $name is pinned to your dash, right-click its icon and choose Remove from Favorites."
+  fi
+
+  profile=$(profile_dir_for "$slug")
+  if [[ -d "$profile" ]]; then
+    reply=''
+    ask "Also delete the login/session data in $profile (cannot be undone) [y/N]" reply || reply=''
+    if [[ "$reply" =~ ^[Yy] ]]; then
+      case "$profile" in
+        "$CONFIG_ROOT"/chrome-*)
+          rm -rf -- "$profile"
+          ok "Deleted $profile"
+          ;;
+        *)
+          warn "Refusing to delete unexpected profile path: $profile"
+          ;;
+      esac
+    fi
+  fi
+}
+
+cmd_fix_wmclass() {
+  local slug="$1"
+  local file exec_line name url icon_path browser categories profile domain
+  file=$(desktop_file_for "$slug")
+  [[ -e "$file" ]] || die "No launcher found for slug '$slug' — run '$0 list'."
+
+  exec_line=$(grep -m1 '^Exec=' "$file" || true)
+  [[ -n "$exec_line" ]] || die "No Exec= line in $file"
+  browser=$(printf '%s' "$exec_line" | sed 's/^Exec=//' | awk '{print $1}')
+  name=$(desktop_key "$file" Name)
+  url=$(app_url_from_exec "$exec_line")
+  icon_path=$(desktop_key "$file" Icon)
+  categories=$(desktop_key "$file" Categories)
+  profile=$(profile_dir_for "$slug")
+
+  [[ -n "$url" ]] || die "Could not parse --app= URL from $file"
+  domain=$(domain_of "$url")
+  [[ -n "$domain" ]] || die "Could not parse a hostname from URL: $url"
+
+  local guess_wmclass
+  guess_wmclass=$(guessed_wmclass "$browser" "$domain")
+
+  if ! ensure_detect_deps || ! x_reachable; then
+    write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
+      "$categories" "$guess_wmclass" "$profile"
+    ok "Set StartupWMClass=$guess_wmclass (not confirmed from a window)."
+    manual_wmclass_hint "$slug" "$name"
+    return 0
+  fi
+
+  info "Reading $name's window class (reuses the window if it is already open)..."
+  local real_wmclass
+  if real_wmclass=$(detect_wmclass "$browser" "$profile" "$url"); then
+    write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
+      "$categories" "$real_wmclass" "$profile"
+    ok "Updated StartupWMClass=$real_wmclass"
+  else
+    write_desktop_file "$slug" "$name" "$url" "$icon_path" "$browser" \
+      "$categories" "$guess_wmclass" "$profile"
+    ok "Set StartupWMClass=$guess_wmclass (window class was not confirmed in time)."
+    manual_wmclass_hint "$slug" "$name"
+  fi
+}
+
+# ---------- main ----------
+
+main() {
+  if [[ $# -eq 0 ]]; then
+    usage >&2
+    exit 1
+  fi
+
+  local cmd="$1"
+  shift
+
+  case "$cmd" in
+    create)      cmd_create "$@" ;;
+    list)        cmd_list ;;
+    remove)      [[ $# -eq 1 ]] || die "Usage: $0 remove SLUG";      cmd_remove "$1" ;;
+    fix-wmclass) [[ $# -eq 1 ]] || die "Usage: $0 fix-wmclass SLUG"; cmd_fix_wmclass "$1" ;;
+    -h | --help) usage ;;
+    *)           usage >&2; exit 1 ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
