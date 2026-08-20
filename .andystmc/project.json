@@ -2,50 +2,47 @@
   "version": 1,
   "name": "toolbox",
   "tagline": "A collection of useful things I use and keep around",
-  "description": "A domain-agnostic public dump of small tools I actually use, one directory per tool under src/. Nothing here is a product line. The first inhabitant is webapp-launcher, a Bash CLI that turns a website into a GNOME dock app with an isolated Chromium profile, icon, and correct window grouping.",
+  "description": "A domain-agnostic public repo of small tools I actually use, one directory per tool under src/. It is not a product line. The first inhabitant is webapp-launcher, a Bash CLI that turns a website into a GNOME dock app with an isolated Chromium profile, an icon, and window grouping that does not collapse under Chrome.",
   "year": "2026",
   "tags": ["utilities", "personal-tools"],
-  "skills": ["Bash", "Python", "Linux", "GNOME", "Chromium", "ImageMagick", "X11"],
+  "skills": ["Bash", "Linux", "GNOME", "Chromium", "ImageMagick", "X11"],
   "highlights": [
-    "Layout is one tool per directory under src/; the root is a knowledge-architecture kernel, not a themed product",
-    "CLI commands create, list, remove, fix-wmclass, and square-icon are implemented in src/webapp-launcher/webapp-launcher",
-    "Launchers write ~/.local/share/applications/<slug>.desktop with --start-maximized --app and X-WebAppLauncher metadata",
-    "StartupWMClass is guessed from Chromium host plus sanitized path, then optionally overwritten from a live xdotool/xprop window",
-    "21 example .desktop files and PNG icons live in src/webapp-launcher/examples/",
-    "scripts/lint_knowledge.py --strict is vendored from knowledge-architecture v0.1.0; the script is checked with bash -n"
+    "src/ holds one tool per directory; the only shipped tool is webapp-launcher",
+    "create, list, remove, fix-wmclass, and square-icon are implemented in src/webapp-launcher/webapp-launcher",
+    "Launchers write a Freedesktop .desktop with --start-maximized --app and X-WebAppLauncher metadata",
+    "StartupWMClass is guessed from Chromium host plus sanitized path, then optionally confirmed via xdotool and xprop",
+    "21 example .desktop files and PNG icons are checked in under src/webapp-launcher/examples/"
   ],
   "story": {
     "why": "Give the small things I use a single repo instead of scattering scripts, without tying the collection to one domain.",
-    "problem": "Useful one-off tools have nowhere durable to live. The first tool in the box also has to solve GNOME grouping Chromium --app windows under Chrome, stretching non-square icons, and mixing logins in a shared profile.",
+    "problem": "One-off tools have nowhere durable to live. The first tool also has to stop Chromium --app windows grouping under Chrome, stretching icons, and mixing logins.",
     "challenges": [
-      "Keep the repo generic while the only shipped tool is GNOME/Chromium-specific (src/webapp-launcher/)",
-      "Chromium encodes URL path into WM_CLASS, so host-only guesses mis-group https://www.google.com/finance/ (app_name_of_url in src/webapp-launcher/webapp-launcher)",
-      "Pure Wayland with no DISPLAY has no X window class to read (x_reachable and Looking Glass fallback)",
-      "Matching windows by title can bind a normal Chrome tab whose instance is chrome",
-      "GNOME stretches non-square dock icons; pad_icon_square trims empty margins then extents to max(w,h)*1.10 without resampling",
-      "Each isolated profile is a fresh Chrome and prompts to become the default browser (first_run_hint)",
-      "remove must not delete arbitrary paths: profile wipe is opt-in and restricted to ~/.config/chrome-*"
+      "The collection must stay generic while the only shipped tool is GNOME-specific (src/webapp-launcher/)",
+      "Chromium encodes URL path into WM_CLASS, so host-only guesses mis-group /finance/ (src/webapp-launcher/webapp-launcher)",
+      "Pure Wayland with no DISPLAY has no X window class to read (src/webapp-launcher/webapp-launcher)",
+      "Matching windows by title can bind a normal Chrome tab whose instance is chrome (src/webapp-launcher/webapp-launcher)",
+      "GNOME stretches non-square dock icons unless margins are trimmed then padded (src/webapp-launcher/webapp-launcher)",
+      "Each isolated profile is a fresh Chrome and prompts to become the default browser (src/webapp-launcher/webapp-launcher)",
+      "Profile delete is destructive and must stay opt-in on ~/.config/chrome-* only (src/webapp-launcher/webapp-launcher)"
     ],
     "designDecisions": [
       "One directory per tool under src/; do not flatten tools into the repo root (AGENTS.md)",
-      "No domain implied at the root: README is a catalog, not a GNOME or web-app manifesto",
-      "Write a usable .desktop immediately, then overwrite StartupWMClass from the live window when xdotool and xprop work",
-      "Per-site --user-data-dir at ~/.config/chrome-<slug>/ so sessions stay isolated",
-      "Exec always includes --start-maximized",
-      "Non-TTY create fails instead of treating piped stdin as prompt answers",
-      "Knowledge-architecture kernel only: AGENTS.md hub plus pointer CLAUDE.md, GEMINI.md, and .github/copilot-instructions.md; no empty docs rings"
+      "Root README is a catalog, not a domain manifesto (README.md)",
+      "Write a usable .desktop immediately, then overwrite StartupWMClass from a live window (src/webapp-launcher/webapp-launcher)",
+      "Per-site --user-data-dir at ~/.config/chrome-<slug>/ so sessions stay isolated (src/webapp-launcher/webapp-launcher)",
+      "Exec always includes --start-maximized (src/webapp-launcher/webapp-launcher)",
+      "Non-TTY create fails instead of treating piped stdin as answers (src/webapp-launcher/webapp-launcher)",
+      "Knowledge kernel is AGENTS.md plus pointer files; no empty docs rings (AGENTS.md)"
     ]
   },
   "future": {
-    "next": "Drop in the next self-contained tool under src/ whenever one exists, regardless of domain. The tree currently has only webapp-launcher.",
+    "next": "Add the next self-contained tool under src/ when there is one; the tree currently has only webapp-launcher.",
     "roadmap": [
-      "Automated tests beyond bash -n on the launcher script",
-      "Optional CI for python3 scripts/lint_knowledge.py --strict",
-      "Knowledge-architecture rings such as docs/now.md or docs/decisions/ when a choice needs an ADR"
+      "Tests beyond bash -n on src/webapp-launcher/webapp-launcher",
+      "CI for python3 scripts/lint_knowledge.py --strict if the repo grows a workflow",
+      "docs/now.md or docs/decisions/ when a choice needs an ADR (AGENTS.md)"
     ],
     "upcomingFeatures": [],
-    "ideas": [
-      "Nested AGENTS.md if a second tool grows distinct commands"
-    ]
+    "ideas": []
   }
 }
